@@ -1,0 +1,186 @@
+---
+title: "AactMain"
+output: html_document::flex_dashboard
+---
+
+```{r global, include = FALSE}
+library(shiny)
+library(RPostgreSQL)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+```
+
+```{r}
+drv <- dbDriver('PostgreSQL')
+con <- dbConnect(drv, dbname="aact",host="aact-db.ctti-clinicaltrials.org", port=5432, user="emilia123", password="Penguin123!")
+```
+
+
+```{r}
+date_ranges <- dbGetQuery(con, "select min(study_first_posted_date), max(study_first_posted_date) from studies")
+```
+
+
+## UI
+
+```{r}
+ui <- fluidPage(
+  titlePanel("AACT studies"),
+
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput(inputId = "date",
+                  label = "First posted date:",
+                  min = date_ranges$min,
+                  max = date_ranges$max,
+                  value = c(date_ranges$min, date_ranges$max)
+                  ),
+      width=3
+    ),
+    
+    mainPanel(
+      plotOutput(outputId = "statusHistPlot"),
+      plotOutput(outputId = "stopHistPlot"),
+      plotOutput(outputId = "scatterPlot"),
+      plotOutput(outputId = "sourceHistPlot")
+    )
+  )
+)
+```
+
+
+## Server logic
+
+```{r}
+getScatterPlot <- function(dates){
+  query <- "select enrollment, number_of_arms, phase, enrollment_type
+            from studies
+            where (not enrollment is null) and (not number_of_arms is null) and (phase!='N/A') and enrollment_type!='N/A' and study_first_posted_date > 'MIN_PLACEHOLDER' and study_first_posted_date < 'MAX_PLACEHOLDER' limit 2500"
+  
+  query <- str_replace(query, 'MIN_PLACEHOLDER', as.character(dates[1]))
+  query <- str_replace(query, 'MAX_PLACEHOLDER', as.character(dates[2]))
+  
+  data <- dbGetQuery(con, query)
+  gg <- ggplot(data, aes(x=number_of_arms, y=enrollment, color=phase, shape=enrollment_type))+
+    geom_point(size=4) + 
+    ggtitle("Enrollment vs Number of Arms:") +
+    theme_minimal() +
+    labs(x="Number of Arms", 
+       y="Enrollment")+
+    scale_color_discrete(name ="Phase:")+
+    scale_shape_discrete(name ="Enrollment Type:")+
+    theme(text = element_text(size=15), axis.text.x = element_text(angle = 60, hjust = 1))
+  return(gg)
+}
+```
+
+
+```{r}
+getSourceHistogram <- function(dates){
+  query <- "select 
+	  source,
+	  count(*) as amount
+    from (select * from studies where study_first_posted_date > 'MIN_PLACEHOLDER' and study_first_posted_date < 'MAX_PLACEHOLDER') filtered
+  group by source
+  having not source is null
+  order by amount desc limit 20"
+  
+  query <- str_replace(query, 'MIN_PLACEHOLDER', as.character(dates[1]))
+  query <- str_replace(query, 'MAX_PLACEHOLDER', as.character(dates[2]))
+  
+  data <- dbGetQuery(con, query)
+  gg <- ggplot(data, aes(x=reorder(source, -amount), y=amount)) +
+    geom_col() +
+    ggtitle("Top 20 Study Sources:") +
+    theme_minimal() +
+    labs(x="Source", 
+       y="Count")+
+    scale_x_discrete(label = function(x) stringr::str_trunc(x, 32))+
+    theme(text = element_text(size=13), axis.text.x = element_text(angle = 60, hjust = 1))
+  
+  return(gg)
+}
+
+```
+
+
+```{r}
+getStopReasonsHistogram <- function(dates){
+  query <- "select 
+	  why_stopped,
+	  count(*) as amount
+    from (select * from studies where study_first_posted_date > 'MIN_PLACEHOLDER' and study_first_posted_date < 'MAX_PLACEHOLDER') filtered
+  group by why_stopped
+  having not why_stopped is null
+  order by amount desc limit 10"
+  
+  query <- str_replace(query, 'MIN_PLACEHOLDER', as.character(dates[1]))
+  query <- str_replace(query, 'MAX_PLACEHOLDER', as.character(dates[2]))
+  
+  data <- dbGetQuery(con, query)
+  gg <- ggplot(data, aes(x=reorder(why_stopped, -amount), y=amount)) +
+    geom_col() + 
+    ggtitle("Top 10 Reasons Why Studies Were Stopped:") +
+    theme_minimal() +
+    labs(x="Reason", 
+       y="Count")+
+    scale_x_discrete(label = function(x) stringr::str_trunc(x, 32))+
+    theme(text = element_text(size=13), axis.text.x = element_text(angle = 60, hjust = 1))
+  
+  return(gg)
+}
+```
+
+```{r}
+getStudiesStatus <- function(dates){
+  query <- "select 
+	  overall_status,
+	  has_dmc,
+	  count(*) as amount
+  from (select * from studies where study_first_posted_date > 'MIN_PLACEHOLDER' and study_first_posted_date < 'MAX_PLACEHOLDER') filtered
+  group by overall_status, has_dmc"
+  
+  query <- str_replace(query, 'MIN_PLACEHOLDER', as.character(dates[1]))
+  query <- str_replace(query, 'MAX_PLACEHOLDER', as.character(dates[2]))
+  
+  data <- dbGetQuery(con, query)
+  gg <- ggplot(data, aes(x=reorder(overall_status,-amount), y=amount)) +
+    geom_col(aes(fill=has_dmc)) + 
+    ggtitle("Studies Official Statuses:") +
+    theme_minimal() +
+    labs(x="Status", 
+       y="Count")+
+    scale_fill_discrete(name ="DMC Status:",  labels = c("No DMC", "Has DMC", "No Info"))+
+    theme(text = element_text(size=15), axis.text.x = element_text(angle = 60, hjust = 1))
+  return(gg)
+}
+```
+
+```{r}
+server <- function(input, output) {
+  output$stopHistPlot <- renderPlot({
+      getStopReasonsHistogram(input$date)
+    })
+  
+  output$sourceHistPlot <- renderPlot({
+    getSourceHistogram(input$date)
+  })
+  
+  output$scatterPlot <- renderPlot({
+    getScatterPlot(input$date)
+  })
+  
+  output$statusHistPlot <- renderPlot({
+    getStudiesStatus(input$date)
+  })
+}
+```
+
+## Embedded Application
+
+```{r}
+shinyApp(ui, server)
+```
+
+
