@@ -1,0 +1,130 @@
+---
+title: "STAT 206 Lab 3"
+author: "Emilia Avanes"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+Part I
+==========
+```{r}
+## 1. The data is contained in a data frame called `cats`, in the R package `MASS`.  (This package is part of the standard R installation.)  This records the sex of each cat, its weight in kilograms, and the weight of its heart in grams.  Load the data as follows:
+
+library(MASS)
+data(cats)
+
+##Run `summary(cats)` and explain the results.
+## There are 47 female and 97  male cats. Their body weight ranges from 2 to 3.9 units however, heart weight ranges from 6.3 to 20.5 units.
+
+summary(cats)
+
+## 2. Plot a histogram of these weights using the `probability=TRUE` option. Add a vertical line with your calculated mean using `abline(v=yourmeanvaluehere)`. Does this calculated mean look correct?
+
+hist(cats$Bwt, probability = TRUE) 
+abline(v = mean(cats$Bwt))
+
+
+hist(cats$Hwt, probability = TRUE) 
+abline(v = mean(cats$Hwt))
+
+
+##3. Define two variables, `fake.mean <- 10` and `fake.var <- 8`. Write an expression for $a$ using these placeholder values. Does it equal what you expected given the solutions above? Once it does, write another such expression for $s$ and confirm.
+
+fake.mean <- 10 
+fake.var <- 8
+
+a = (fake.mean^2)/fake.var
+print (a)
+
+s= (fake.var/fake.mean)
+print (s)
+
+##4. Calculate the mean, standard deviation, and variance of the heart weights using R's existing functions for these tasks. Plug the mean and variance of the cats' hearts into your formulas from the previous question and get estimates of $a$ and $s$.  What are they?  Do not report them to more significant digits than is reasonable.
+## mean
+m = mean(cats$Hwt)
+print (m)
+## variance
+v = var(cats$Hwt)
+print (v)
+## standard deviation
+std_dev = sd(cats$Hwt)
+print (std_dev)
+
+## find a. This is the mean squared error, measures the average of the squares of the errors.
+a = (m * m) / v
+print (a)
+
+## find. This is the cv (coefficent of the variation or relative standard deviation)
+s = v / m
+print (s)
+
+
+# 5. Write a function, cat.stats(), which takes as input a vector of numbers and returns the mean and variances of these cat hearts. (You can use the existing mean and variance functions within this function.) Confirm that you are returning the values from above.
+
+cats.stats <- function(input_vector) {
+  
+  vec_mean = mean(input_vector, na.rm = T)
+  vec_var = var(input_vector, na.rm = T)
+  
+  list(vectorMean = vec_mean, vectorVariance = vec_var)
+  
+}
+
+cats.stats(cats$Hwt)
+```
+
+Part II
+=======
+```{r}
+## 6.Now, use your existing function as a template for a new function, `gamma.cat()`, that calculates the mean and variances and returns the estimate of $a$ and $s$. What estimates does it give on the cats' hearts weight? Should it agree with your previous calculation?
+# Yes. it matches the results obtained in previous question.
+
+gamma.cat <- function(input_vector) {
+  
+  mean_var = cats.stats(input_vector = input_vector)
+  m = mean_var$vectorMean
+  v = mean_var$vectorVariance
+  
+  a = m*m / v
+  s = v / m
+  
+  list(a = a, s = s)
+}
+
+gamma.cat(cats$Hwt)
+
+## 7.Estimate the $a$ and $s$ separately for all the male cats and all the female cats, using `gamma.cat()`. Give the commands you used and the results.
+## heart weight
+
+## only males
+gamma.cat(cats$Hwt[cats$Sex == "M"])
+
+## only females
+gamma.cat(cats$Hwt[cats$Sex == "F"])
+
+## Body weight
+
+## only males
+gamma.cat(cats$Bwt[cats$Sex == "M"])
+
+## only females
+gamma.cat(cats$Bwt[cats$Sex == "F"])
+
+## 8.Now, produce a histogram for the female cats. On top of this, add the shape of the gamma PDF using `curve()` with its first argument as `dgamma()`, the known PDF for the Gamma distribution. Is this distribution consistent with the empirical probability density of the histogram?
+
+x = cats$Hwt[cats$Sex == "F"]
+hist(x, probability = TRUE) 
+par(new = TRUE)
+curve(dgamma(x, shape = gamma.cat(x)$a, scale = gamma.cat(x)$s))
+
+##Yes this distribution is consisted with the probability density as is shown by the trend of the line.
+
+## 9.Repeat the previous step for male cats. How do the distributions compare?
+
+x = cats$Hwt[cats$Sex == "M"]
+hist(x, probability = TRUE) 
+par(new = TRUE)
+curve(dgamma(x, shape = gamma.cat(x)$a, scale = gamma.cat(x)$s))
+
+```

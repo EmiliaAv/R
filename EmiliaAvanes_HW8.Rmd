@@ -1,0 +1,309 @@
+---
+title: "EmiliaAvanes_Homework8"
+author: "Emilia Avanes"
+date: "11/29/2019"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+library(tidyverse)
+library(broom)
+
+# Part I.
+#1. Write an independence MH sampler with g ∼ Γ(2, θ).
+
+
+# Idea taken from:
+# https://rstudio-pubs-static.s3.amazonaws.com/164376_1d3d34ffdbe74e158d837f1129b53af3.html
+
+```{r}
+gamma_sampler<-function (n, a, b) 
+{
+  mu <- a/b
+  sig <- sqrt(a/(b * b))
+  vec <- vector("numeric", n)
+  x <- a/b
+  vec[1] <- x
+  for (i in 2:n) {
+    can <- rnorm(1, mu, sig)
+    # Acceptance ratio!
+    aprob <- min(1, (dgamma(can, a, b)/dgamma(x,a, b))/(dnorm(can, mu, sig)/dnorm(x, mu, sig)))
+    u <- runif(1)
+    if (u < aprob) 
+      x <- can
+    vec[i] <- x
+  }
+  vec
+}
+```
+
+# 2. What is R(xt, X∗) for this sampler?
+# Acceptance ratio is variable "aprob" in code above
+
+
+#3. Generate 10000 draws from f with θ ∈ {1/2, 1, 2}.
+
+
+
+
+gamma_sampler_fixedshape<-function(scale){
+  vec<-gamma_sampler(n=10000,a=2,b=scale)
+}
+
+testvalues<-c(0.5,1,2)
+
+out<-lapply(X=testvalues,FUN=gamma_sampler_fixedshape)
+
+qplot(out[[1]],bins=100)+xlab("scale=0.5")
+qplot(out[[2]],bins=100)+xlab("scale=1.0")
+qplot(out[[3]],bins=100)+xlab("scale=2.0")
+
+
+
+# 4. Write a random walk MH sampler with h ∼ N(0,σ2).
+
+```{r}
+rw_gamma_sampler <- function(n, cand.sd, shape, scale) {
+   theta.cur <- 1
+   draws <- c()
+   theta.update <- function(theta.cur, shape, scale) {
+     theta.can <- rnorm(1, mean = theta.cur, sd = cand.sd)
+     # Acceptance ratio!
+     aprob <- dgamma(theta.can, shape = shape, scale = scale)/dgamma(theta.cur,shape = shape, scale = scale)
+     if (runif(1) <= aprob) theta.can else theta.cur
+      }
+   for (i in 1:n) {
+     draws[i] <- theta.cur <- theta.update(theta.cur, shape = shape, scale = scale)
+     }
+  return(draws)}
+```
+
+# 5. What is R(xt, X∗) for this sampler?
+# Acceptance ratio is variable "aprob" in code above
+
+
+# 6. Generate 10000 draws from f with σ ∈ {.2, 1, 5}.
+```{r}
+rw_gamma_sampler_variablesigma<-function(cand.sd){
+  vec<-rw_gamma_sampler(n=10000,shape=2,scale=1,cand.sd = cand.sd)
+}
+
+testvalues<-c(0.2,1,5)
+rw_out <-lapply(X=testvalues,FUN=rw_gamma_sampler_variablesigma)
+
+qplot(rw_out[[1]],bins=100)+xlab("variance=0.2")
+qplot(rw_out[[2]],bins=100)+xlab("variance=1.0")
+qplot(rw_out[[3]],bins=100)+xlab("variance=5.0")
+```
+
+#7. In general, do you prefer an independence chain or
+#a random walk MH sampler? Why?
+# Random walk, because tbe independence sampler 
+# tends to have the poorest acceptance probability and 
+# in general is hardest to tune well.
+
+
+
+## PART II
+```{r}
+
+library(dismo)
+data("Anguilla_train") 
+
+anguilla<-Anguilla_train %>% as_tibble()
+rm(Anguilla_train)
+
+wanted<-c("SegSumT", "DSDist", "USNative", "DSMaxSlope", "Method", "Angaus")
+anguilla <- anguilla %>% select_(.dots=wanted)
+
+```
+
+# Run this only if u don't have MCMCpack installed!
+
+
+#library(devtools)
+#devtools::install_github("cran/MCMCpack")
+```{r}
+library(MCMCpack)
+
+# Maximum likelihood estimates
+mle_summary <- anguilla %>% 
+  glm(Angaus ~., data=.) %>% 
+  tidy()
+print(mle_summary)
+
+```
+#9. Implement an MCMC sampler for the target distribution 
+# using the MCMClogit function in the MCMCpack package
+
+```{r}
+mysampler <- function(n_iterations){
+variance<-100
+posterior <- anguilla %>% 
+ MCMClogit(Angaus ~., data=., b0=0, B0=(1/variance),mcmc=n_iterations,burnin=n_iterations*.01)
+return(posterior)
+}
+
+
+# 11. Run your sampler for 100,000 iterations. Estimate 
+# the posterior mean along with an 80% Bayesian credible 
+# interval for each regression coefficient in the model.
+# Be sure to include uncertainty estimates.
+
+
+posterior <- mysampler(n_iterations=100000)
+bayesian_summary <- posterior %>% summary() 
+bayesian_summary <- bayesian_summary$statistics
+
+
+lower_ci <- function(mean, se, n=100000, conf_level = 0.80){
+  lower_ci <- mean - qt(1 - ((1 - conf_level) / 2), n - 1) * se
+}
+upper_ci <- function(mean, se, n=100000, conf_level = 0.80){
+  upper_ci <- mean + qt(1 - ((1 - conf_level) / 2), n - 1) * se
+}
+
+bayesian_summary <- bayesian_summary %>% 
+  data.frame() %>% 
+  rownames_to_column() %>% 
+  as_tibble() %>% 
+  mutate(lower_ci = lower_ci(Mean, `Naive.SE`),
+         upper_ci = upper_ci(Mean, `Naive.SE`)) %>%
+  data.frame()
+
+print(bayesian_summary)
+
+
+# 10. Comment on the mixing properties for your sampler.
+# Include at least one plot in support of your comments.
+
+
+# Possible explanation can be found at:
+# https://stats.stackexchange.com/questions/20437/why-should-we-care-about-rapid-mixing-in-mcmc-chains
+
+toyexample <- mysampler(n_iterations=1000)
+toy_summary <-toyexample %>% summary() 
+toy_summary <- toy_summary$statistics
+
+
+toy_summary <- toy_summary %>% 
+  data.frame() %>% 
+  rownames_to_column() %>% 
+  as_tibble() %>% 
+  mutate(lower_ci = lower_ci(Mean, `Naive.SE`),
+         upper_ci = upper_ci(Mean, `Naive.SE`)) %>%
+  data.frame()
+
+print(toy_summary)
+
+# Following explanation at previous URL, we can compare the
+# histograms for the distributions of the estimated means after a fixed number of iterations.
+
+# NOTE: You have to increase size of the "viewer" sub-window in RStudio to make this work.
+
+plot(posterior)
+plot(toyexample)
+# Comparin the iterations vs. value estimate in both cases,
+# we see that convergence is reached as we increase the number
+# of iterations.
+
+
+# 12. Compare your Bayesian estimates to those obtained 
+# via maximum likelihood estimation.
+
+
+# Bayesian
+
+print(bayesian_summary)
+# Maximum likelihood 
+print(mle_summary)
+
+
+
+## PART III
+
+data("chickwts")
+library(latticeExtra)
+
+
+# 13. Implement the two sample Cram’er von Mises test for equal distributions 
+# as a permutation test. Apply it to the chickwts data comparing the soybean 
+# and linseed diets.
+
+cramertest<-function(x, y, data){
+  r <- 10000 # Permutation samples
+  reps <- vector("numeric", r)
+  n <- length(x)
+  m <- length(y)
+  v.n <- vector("numeric", n) # Replication vectors
+  v1.n <- vector("numeric", n)
+  v.m <- vector("numeric", m)
+  v1.m <- vector("numeric", m)
+  z <- c(x, y)
+  N <- length(z)
+  for (i in 1:n) v.n[i] <- ( x[i] - i )**2
+  for (j in 1:m) v.m[j] <- ( y[j] - j )**2
+  # Test statistic
+  reps_0 <- ( (n * sum(v.n) + m * sum(v.m)) / (m * n * N) ) -
+    (4 * m * n - 1) / (6 * N)
+  for (k in 1:r) { # Permautation samples
+    w <- sample(N, size = n, replace = FALSE)
+    x1 <- sort( z[ w] )
+    y1 <- sort( z[-w] )
+    for (i in 1:n) { v1.n[i] <- ( x1[i] - i )**2 }
+    for (j in 1:m) { v1.m[j] <- ( y1[j] - j )**2 }
+    reps[k] <- ( (n * sum(v1.n) + m * sum(v1.m)) / (m * n * N) ) -
+      (4 * m * n - 1) / (6 * N)
+  }
+  p <- mean( c(reps_0, reps) >= reps_0 )
+  return(
+    histogram(c(reps_0, reps) # Histogram
+              , type = "density"
+              , col = "#0080ff"
+              , xlab = "Replicates of Cramér-Von Mises (CVM) statistic"
+              , ylab = list(rot = 0)
+              , main = paste0(
+                "Data: ", data, "\n"
+                , "Permutation distribution of CVM statistic")
+              , sub = list(substitute(paste(hat(p), " = ",pvalue)
+                                      , list(pvalue = p))
+                           , col = 2)
+              , panel = function(...){
+                panel.histogram(...)
+                panel.abline(v = reps_0, col = 2, lwd = 2)
+              })
+  )
+}
+
+x <- chickwts  %>% 
+  dplyr::filter(feed=="soybean") %>% 
+ dplyr::select(weight) %>% 
+  arrange(weight) %>% 
+  pull(.)
+
+y <- chickwts  %>% 
+  dplyr::filter(feed=="linseed") %>% 
+  dplyr::select(weight) %>% 
+  arrange(weight) %>% 
+  pull(.)
+
+
+cramertest(x, y, "Exercise 13.A")
+
+
+#14. How would you implement the bivariate Spearman rank correlation test for 
+#independence as a permutation test? The Spearman rank correlation test
+#statistic can be obtained from the function cor with method="spearman". 
+#Compare the achieved significance level of the permutation test with 
+#the p-value reported by cor.test on the same samples.
+
+# With bootstrapping.
+# Explanation found at: 
+# http://faculty.washington.edu/yenchic/18W_425/Lec3_permutation.pdf  Section 3.2.1

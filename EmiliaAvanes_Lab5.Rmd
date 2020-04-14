@@ -1,0 +1,189 @@
+---
+title: "STAT 206 Lab 5"
+author: "Emilia Avanes"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+**Due Monday, November 4, 5:00 PM**
+
+***General instructions for homework***: Homework must be submitted as pdf file, and be sure to include your name in the file.  Give the commands to answer each question in its own code block, which will also produce plots that will be automatically embedded in the output file. Each answer must be supported by written statements as well as any code used.  (Examining your various objects in the "Environment" section of RStudio is insufficient -- you must use scripted commands.)
+
+Part I - Optimization and standard errors
+==========
+```{r}
+
+##a. Write a function, logistic, which calculates the logistic function. It should take two arguments, t and theta. The theta argument should be a vector of length two, the first component being the parameter b and the second component being t0. Your function may not use any loops. Plot the curve of the logistic function with b = 0.05, t0 = 3, from t = −30 to t = 30.
+
+
+logistic = function(t, theta){
+  # Define logistic function
+  
+  b = theta[1]
+  t0 = theta[2]
+  
+  exp(b*(t-t0))/(1 + exp(b*(t-t0)))
+}
+
+# plot logistic function output for the parameters below.
+t = seq(from = -30, to = 30, by = 1)
+b = 0.05
+t0 = 3
+
+# get output of logistic function for each t using sapply
+all_logistic_values = sapply(t, function(x) logistic(x, c(b, t0)))
+plot(all_logistic_values)
+
+```
+
+b. Explain why p(t0) = 0.5, no matter what b is. Use this to check your logistic function at multiple
+combinations of b and t0.
+
+*Answer : *
+
+at t = t0, t - t0 becomes zero. Therefore irrespective of the value of b, 
+
+    b x (t - t0) = 0.
+
+hence, 
+
+    exp(b * (t - t0)) = 1, 
+
+and we have =>
+
+    p(t = t0) = 1 / (1 + 1) = 0.5
+
+
+
+c. Explain why the slope of p(t) at t = t0 is b/4. (Hint: calculus.) Use this to check your logistic
+function at multiple combinations of b and t0.
+
+*Answer :*
+
+2. The Data.
+============
+
+a. How many doctors in the survey had adopted tetracycline by month 5? Hint: Use na.omit
+carefully.
+
+*Answer :* 51 Doctors had adopted tetracyline by month 5.
+
+```{r}
+data = read.csv("http://faculty.ucr.edu/~jflegal/206/ckm_nodes.csv")
+
+# count of doctors who adopted the drug by month 5. => adoption_date <=5
+adoption_by_m5 = sum(data$adoption_date<=5, na.rm = T)
+adoption_by_m5
+```
+
+
+b. What proportion of doctors, for whom adoption dates are available, had adopted tetracycline by
+month 5?
+
+Answer : 40.8 percent of doctors (amongst those for whom adoption data is available).
+
+```{r}
+# count of doctors for whom adoption data is available.
+# total doctor count - records with adoption date as NA
+avl_adop_inf = nrow(data) - sum(is.na(data$adoption_date))
+
+# proportion of doctors who adopted teh drug by m5 
+prop_m5 = adoption_by_m5/ avl_adop_inf
+prop_m5
+```
+
+
+c. Create a vector, prop_adopters, storing the proportion of doctors who have adopted by each
+month. (Be careful about Inf and NA.)
+
+```{r}
+# We will ignore the doctors with missing adoption date for calculation of proportion, as in 2.b
+# doctors with adoption date = Inf have been included for calulation of proportion as they are 
+# the those who adopted but only after the observation period of 17 months expired.
+
+# Get info for month 1 to 17.
+possible_months = 1:17
+prop_adopters = sapply(possible_months, function(x) {
+  sum(data$adoption_date<=x, na.rm = T)/ avl_adop_inf})
+
+```
+
+d. Make a scatter-plot of the proportion of adopters over time.
+
+```{r}
+plot(prop_adopters)
+```
+
+
+e. Make rough guesses about t0 and b from the plot, and from your answers in problem 1.
+
+*Answer :* 
+
+approximate values of 
+    
+    t0 (index at which prop = 0.5) = *6.0* and 
+    
+    b (4 times the slope at t = t0) = 4 x (.62-.42)/2 = *0.4*
+          
+3. The Fit.
+==========
+
+a. Write a function, logistic_mse, which calculates the mean squared error of the logistic model on
+this data set. It should take a single vector, theta, and return a single number. This function
+cannot contain any loops, and must use your logistic function.
+
+```{r}
+logistic_mse = function(theta){
+  
+  # DOCSTRING:: function to calculate mean squared error 
+  # using logistic function defined earlier
+  
+  b = theta[1]
+  t0 = theta[2]
+  t = 1:17
+  
+  # get logistic function output for the given theta and different values of t.
+  probs = sapply(t, function(x) {logistic(x, theta)})
+  
+  # calculate rmse
+  rmse = sqrt(sum((probs - prop_adopters)^2)/length(t))
+  
+  # return rmse, rounded to 4 decimals.
+  return(round(rmse, 4))
+}
+
+```
+
+
+b. Use optim to minimize logistic_mse, starting from your rough guess in problem 2e. Report
+the location and value of the optimum to reasonable precision. (By default, R prints to very
+unreasonable precision.)
+
+*Answer :*
+
+The function for rmse successfully converged with
+
+    *b = 0.245* and *t0 = 6.037*
+    
+The minimum rmse observed is, 
+
+    RMSEmin = *0.0637* (rounded to 4 decimals)
+
+```{r}
+optim(par = c(0.4, 6), fn = logistic_mse, method = 'CG')
+```
+
+c. Add a curve of the fitted logistic function to your scatterplot from Problem 2d. Does it seem like a reasonable match?
+
+*Answer :* YES..!! it is a good match.
+
+```{r}
+t = seq(1,17, by= 1)
+b = 0.245
+t0 = 6.037
+probs = sapply(t, function(x) {logistic(x, theta= c(b, t0))})
+plot(prop_adopters, ylim = c(0,1.2))
+# par(new = TRUE)
+points(probs, col = 'red')
+```

@@ -1,0 +1,253 @@
+---
+title: "Final"
+author: "Emilia Avanes"
+date: "12/3/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+PART I. Rescaled Epanechnikov kernel
+```{r}
+
+library(tidyverse)
+library(broom)
+
+# 1.  Check that the above formula is indeed a density function. 
+# Answer: Since the area below the curve is 1.0, it is a valid density function.
+
+epanechnikov<-function(x){
+  if(abs(x)<=1)
+  {(0.75)*(1-x**2)}
+  else {0}
+}
+
+integrate( function(x) (0.75)*(1-x**2), lower=-1, upper = 1)
+
+#2. Produce a plot of this density function. Set the X-axis limits to be −2 and 2. Label your axes properly and give a title to your plot.
+
+x <- seq(-2,2,.01)
+y<-map_dbl(x,epanechnikov)
+
+qplot(x,y)+xlab("support")+ylab("density")+ggtitle("Epanechnikov kernel")
+
+# 3. Devroye and Gy'orﬁ give the following algorithm for simulation from this distribution. Generate iid random variables U1,U2,U3 ∼ U(−1,1). If |U3|≥|U2| and |U3|≥|U1|, deliver U2, otherwise deliver U3. Write a program that implements this algorithm in R. Using your program, generate 1000 values from this distribution. Display a histogram of these values. 
+
+devroye<-function(){
+u1 <- runif(n=1,min=-1,max=1)
+u2 <- runif(n=1,min=-1,max=1)
+u3 <- runif(n=1,min=-1,max=1)
+if (abs(u3) >= abs(u2) && abs(u3) >= abs(u1)) 
+  {out <- u2}
+else {out <- u3}
+
+return(out)}
+
+replications<-replicate(1000, devroye())
+qplot(replications,bins=100)
+
+#4. Construct kernel density estimates from your 1000 generated values using the Gaussian and Epanechnikov kernels. How do these compare to the true density?
+# Answer: Both are very similar based on the graph:
+
+replications %>% 
+  enframe() %>% 
+    ggplot(., aes(x=value)) +
+  geom_histogram(aes(y=..density..),colour="black",fill="white",bins=50) +
+             geom_density(aes(colour = "epanechnikov"), kernel = "epanechnikov")+
+             geom_density(aes(colour = "gaussian"))
+
+```
+PART II. Rescaled Epanechnikov kernel
+
+```{r}
+# 5. Simulate 200 realizations from the mixture distribution above with δ =0.7.
+
+mixture<-function(delta=0.7){
+first <- rnorm(1,mean=7,sd=0.5)
+second <- rnorm(1,mean=10,sd=0.5)
+out <- delta*first + (1-delta)*second
+return(out)}
+
+realizations<-replicate(200, mixture())
+
+# 6. Draw a histogram of the data that also includes the true density. How close is the histogram to the true density?
+# Answer: The data seems to be close to the true density. If we increase the number of realizations, we can expect the data to match the true density even better.
+
+# Histogram of the data
+realizations %>% 
+  enframe() %>% 
+  ggplot(., aes(x=value)) +
+  geom_histogram(aes(y=..density..),colour="black",fill="white",bins=50)
+ 
+# True density 
+delta<-0.7
+xx <- seq(0, 15, length=1000)
+yy <- delta*dnorm(xx, mean=7, sd=0.5) + (1-delta)*dnorm(xx, mean=10, sd=0.5)
+qplot(xx,yy)
+
+
+#7.Now assume δ is unknown with a Uniform(0,1) prior distribution for δ. Implement an independence Metropolis Hastings sampler with a Uniform(0,1) proposal. 
+
+log.like=function(p,x) {
+     print (sum(log(p*dnorm(x,7,.5)+(1-p)*dnorm(x,10,.5))))
+}
+
+# Independence MH:
+bshape1=1
+bshape2=1
+
+
+temp <- function(x) { dbeta(x, bshape1, bshape2); }
+plot(temp, 0, 1, xlab="x", ylab="density", main="Beta(1,1)")
+
+num.its=10000       
+p=rep(0,num.its)      #MCMC output: vector of p realizations
+p[1]=.2         
+
+set.seed(1)         
+
+j <- num.its-1        # counting acceptance
+for (i in 1:(num.its-1)) {
+   #Generate proposal
+   p[i+1]=rbeta(1,bshape1,bshape2)
+   #Compute Metropolis-Hastings ratio
+   R=exp(log.like(p[i+1],y)-log.like(p[i],y))
+   #Reject or accept proposal
+   if (R<1) {
+      if(rbinom(1,1,R)==0)  { p[i+1]=p[i]; j <- j-1; }
+   }
+}
+P.7=p 
+cat("\nAcceptance Ratio:", round(j/num.its*100,2),"%\n")    
+
+
+# 8. Implement a random walk Metropolis Hastings sampler where the proposal δ∗ = δ(t) +  with  ∼ Uniform(−1,1)
+
+target.log=function(p,x) {
+     sum(log(p*dnorm(x,7,.5)+(1-p)*dnorm(x,10,.5)))
+}
+
+set.seed(2) #Set random seed
+
+num.its=10000       #iterations
+u=rep(0,num.its)    #MCMC output: vector of u realizations
+u[1]= runif(1,-1,1)     #Starting value
+p=rep(0,num.its)        #MCMC output: vector of p realizations
+p[1]=exp(u[1])/(1+exp(u[1]))    #transform u to p
+
+
+# Random walk chain
+
+j <- num.its-1        # counting acceptance
+for (i in 1:(num.its-1)) {
+   #Generate proposal (random walk)
+   u[i+1]=u[i]+runif(1,-1,1)
+
+   #Transform u to p, see page 190-191
+   p[i+1]=exp(u[i+1])/(1+exp(u[i+1]))
+
+   #Compute Metropolis-Hastings ratio
+   R=exp(target.log(p[i+1],y)-target.log(p[i],y))*(p[i+1]*(1-p[i+1]))/(p[i]*(1-p[i]))
+
+   #Reject or accept proposal
+   if (R<1) {
+      if(rbinom(1,1,R)==0)  { p[i+1]=p[i]; u[i+1]=u[i]; j <- j-1; }
+   }
+}
+
+P.8=p  #Save the output to examine later
+u.8=u
+cat("\nAcceptance Ratio:", round(j/num.its*100,2),"%\n")
+
+# 9. The random walk has a higher acceptance ratio than the independent chain. Random walk proposal is centered at the current value of the parameter while the independence chain is independent of the current value. The Random walk performs better because the independence chain doesn't "adapt" to the shape of the posterior.
+
+par(mfrow=c(2,1))
+plot(P.7,type="l",ylab="p",xlab="Iteration",ylim=c(.3,2))
+plot(P.8,type="l",ylab="p",xlab="Iteration",ylim=c(.3,2))
+```
+
+
+
+PART III. Maximum Likelihood
+
+```{r}
+library(tidyverse)
+library(readr)
+library(boot)
+
+finaldata <- read_table2("finaldata.txt", 
+                         col_names = FALSE, col_types = cols(`1` = col_skip(), 
+                                                             X1 = col_skip())) %>% 
+  rename(value=X2)
+
+# Density as function of s and x
+mydensity.s.x<-function(s,x){
+  return(sqrt(s/2*pi) * (exp(-s/2*x)/x**(3/2)))
+}
+
+
+# 10. What is the log-likelihood function?
+
+# We can construct the negative log-likelihood function by using the density defined above, apply it element-wise over each data point, apply logarithm function, compute sum, compute mean, take negative value.
+
+# Negative log-likelihood function, as function of x:
+
+myloglik <- function(s)
+{ 
+  mydensity.x <- function(x) mydensity.s.x(s=s,x)
+  -mean(sum(log(sapply(finaldata$value,FUN=mydensity.x))))
+}
+
+# Graphed:
+
+svec<-seq(0,0.1,length.out=100)
+qplot(svec,sapply(svec,FUN=myloglik))+
+  geom_point(size=2) +
+  xlab("s") +
+  ylab("log-likelihood")
+
+
+# 11.  Suppose we want to numerically calculate the MLE of s using Newton’s method. Write a program to do this and run your program starting from 0.1. 
+
+# Perform optimization (minimize negative log-likelihood and find optimal s)
+# Use quasi-Newton method "BFGS"
+
+optimresult<-optim(par=c(.1),fn=myloglik,method="BFGS")
+optimpar<-optimresult$par
+#Optimum s value:
+print(optimpar)
+
+# 12. Let ^s be the MLE obtained above. Construct an approximate 95% conﬁdence interval for s, centered at ^s
+
+
+# Will need to define a function to use inside 'boot' function since we are going to construct confidence intervals for s via bootstrapping
+
+mystatfunction <- function(data, indices) {
+  d <- data[indices,] # allows boot to select sample
+  
+  # Density as function of s and x
+  mydensity.s.x<-function(s,x){
+    return(sqrt(s/2*pi) * (exp(-s/2*x)/x**(3/2)))
+  }
+  
+  # Negative log-likelihood function, as function of x
+  myloglik <- function(s)
+  { 
+    mydensity.x <- function(x) mydensity.s.x(s=s,x)
+    -mean(sum(log(sapply(d$value,FUN=mydensity.x))))
+  }
+  
+  optimresult<-optim(par=c(.1),fn=myloglik,method="BFGS")
+  optimpar<-optimresult$par
+  return(optimpar)
+}
+
+# Perform boostrapping
+bootObject<-boot(data=finaldata,statistic = mystatfunction,R=100)
+print(bootObject)
+# Get confidence intervals
+bootConfInt <- boot.ci(bootObject,type="basic",conf=0.95)
+print(bootConfInt)
+```

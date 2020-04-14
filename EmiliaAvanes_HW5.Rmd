@@ -1,0 +1,279 @@
+---
+title: "STAT 206 Homework 5"
+author: "Emilia Avanes"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+**Due Monday, November 4, 5:00 PM**
+
+***General instructions for homework***: Homework must be submitted as pdf file, and be sure to include your name in the file.  Give the commands to answer each question in its own code block, which will also produce plots that will be automatically embedded in the output file. Each answer must be supported by written statements as well as any code used.  (Examining your various objects in the "Environment" section of RStudio is insufficient -- you must use scripted commands.)
+
+Part I - Optimization and standard errors
+==========
+```{r}
+##1. Using any optimization code you like, maximize the likelihood of the gamma distribution on the cats’ hearts. Start the optimization at the estimate you get from the method of moments.  (a) What command do you use to maximize the log-likelihood? Explain its arguments.  (b) What is the estimate?  (c) What is the log-likelihood there? The gradient?
+
+library(tidyverse)
+library(MASS)
+library(hesim)
+
+
+# Load the data and convert to tibble (nice format)
+data(cats)
+cats <- cats %>% as_tibble()
+
+
+# Define negative log-likelihood funcion to minimize with optimization procedure
+# Reminder: max log-likelihood is the same as minimize negative log-likelihood
+objective <- function(p=c(0.5,0.5)){
+   return(-sum(dgamma(cats$Hwt,shape = p[1], scale = p[2],log=TRUE)))
+ }
+ 
+
+# Compute sample mean and sample variance.
+sample_mean <- mean(cats$Hwt)
+sample_variance <- sum((cats$Hwt-sample_mean)^2)/(length(cats$Hwt)-1)
+
+# Method of moments estimates
+moments_estimates <- mom_gamma(mean=sample_mean,sd=sqrt(sample_variance),scale = TRUE)
+
+#Perform optimization
+output <- optim(par = c(moments_estimates$shape,moments_estimates$scale),fn = objective)
+
+
+# (a) What command do you use to maximize the log-likelihood? Explain its arguments.
+# We are using built-in R's optim function. Arguments are initial estimates and the objective function to optimize
+
+# (b) What is the estimate? 
+# output$par Contain the estimates
+output[["par"]]
+
+# (c) What is the log-likelihood there? The gradient?
+# output$value Contain the objective function value at the optimim.
+output[["value"]]
+
+# Maximum likelihood estimates
+mle_estimates <- output$par
+# Shape and scale
+print(mle_estimates)
+
+##2. VWrite a function, make.gamma.loglike, which takes in a data vector x and returns a log-likelihood function.
+make.gamma.loglike <- function(xvector){
+  objective <- function(p=c(0.5,0.5))
+    {return(-sum(dgamma(xvector,shape = p[1], scale = p[2],log=TRUE)))}
+   return(objective)
+}
+
+# make.gamma.loglike is a function that returns a also function
+make.gamma.loglike(cats$Hwt)
+
+
+##3. Write a function, `gamma.mle`, which takes in a data vector `x`, and returns a shape and a scale parameter, estimated by maximizing the log-likelihood of the gamma distribution. It should use your `make.gamma.loglike` function from the previous part. Check that if `x` is `cats$Hwt`, then `gamma.mle` matches the answer in problem 1.
+
+gamma.mle <- function(xvector){
+  output <- optim(par = c(moments_estimates$shape,moments_estimates$scale),fn = make.gamma.loglike(xvector))
+  mle_estimates <- output$par
+  return(mle_estimates)
+}
+
+# Maximum likelihood estimates
+output_gamma.mle <- gamma.mle(cats$Hwt)
+# Shape and scale
+print(output_gamma.mle)
+
+##4. Modify the code from homework 4 to use your `gamma.mle` function, rather than the method-of-moments estimator. In addition to giving the modified code, explain in words what you had to change, and why.
+# In HW4 we had the objective function (negative log-likelihood function) for beta distribution
+# and we performed optimization via nlm (non-linear minimization) function.
+# objective <- function(p=c(0.5, 0.5)){
+#   return(-sum(dbeta(data$OBP,shape1=p[1],shape2=p[2],log=TRUE)))
+# }
+#output <- nlm(f=objective,p=c(alpha,beta))
+#alpha_mle <- output$estimate[1]
+#beta_mle <- output$estimate[2]
+
+# Perform optimization
+# Now we can modify the code from HW4 to use nlm as well.
+# We now call make.gamma.loglike(cats$Hwt) as the function to minimize 
+# and give the estimates from method of moments as in HW4.
+output_nlm <- nlm(f=make.gamma.loglike(cats$Hwt),p=c(moments_estimates$shape,moments_estimates$scale))
+print(output_nlm$estimate)
+# Shape and scale
+print(output_gamma.mle)
+
+##5. What standard errors do you get from running $10e4$ simulations?
+
+# Seed to ensure reproducibility
+set.seed(12345)
+# Initialize dataframe to store results from simulations
+results <- data.frame(shape=double(),scale=double()) %>% as_tibble()
+# First simulation
+sim <- rgamma(nrow(cats), shape=output_gamma.mle[1],scale = output_gamma.mle[2])
+
+# Run simulations
+for(i in 1:10000)
+{ params <- gamma.mle(sim)
+  results <- results %>% add_row(shape = params[1],scale=params[2])
+  sim <- rgamma(nrow(cats), shape=output_gamma.mle[1],scale = output_gamma.mle[2])
+}
+
+# Compute standard errors for each parameter (shape and scale)
+se_simulations <- results %>% 
+  group_by() %>% 
+  summarize(n=n(), 
+            sd_shape=sd(shape), se_shape=sd_shape/sqrt(n),
+            sd_scale=sd(scale), se_scale=sd_scale/sqrt(n)) %>% 
+  dplyr::select(se_shape,se_scale)
+
+# Standard errors for shape and scale
+print(se_simulations)
+
+##6. An alternative to using simulation is to use the jack-knife.  Calculate jack-knife standard errors for the MLE of the gamma distribution. Your code should be able to work with an arbitrary data vector, not just `cats$Hwt`, and you will want to use functions from problems 1 and 2.
+
+# Function to get jackknife estimates for shape and scale
+my_jackknife<-function(xvector){
+  
+set.seed(12345)
+results <- data.frame(shape=double(),scale=double()) %>% as_tibble()
+
+for(i in 1:length(xvector))
+{ params <- gamma.mle(xvector[-i])
+  results <- results %>% add_row(shape = params[1],scale=params[2])
+}
+return(results)
+}
+
+
+##7. What are the jackknife standard errors for the MLE? (If you do not have two, one for the shape and one for the scale parameters, something is wrong.)
+
+# Call previously defined function
+results_jackknife <-  my_jackknife(cats$Hwt)
+
+# Compute standard errors for each parameter (shape and scale)
+se_jackknife <- results_jackknife %>% 
+  group_by() %>% 
+  summarize(n=n(), 
+            sd_shape=sd(shape), se_shape=sd_shape/sqrt(n),
+            sd_scale=sd(scale), se_scale=sd_scale/sqrt(n)) %>% 
+  dplyr::select(se_shape,se_scale)
+
+# Standard errors for shape and scale
+print(se_jackknife)
+
+##8. Do your jackknife standard errors for the MLE match those you got in problem 5? Should they?
+
+# Compare standard errors
+print(se_simulations)
+print(se_jackknife)
+# They do not match. They should not necessarily match, since they are both different methods to estimate the parameter and standard errors.
+
+```
+Part II - Newton's method
+==========
+
+Consider the density $f(x) = \left[ 1 - \cos\{x-\theta\}\right] / 2 \pi$ on $0 \le x \le 2 \pi$, where $\theta$ is a parameter between $-\pi$ and $\pi$.  The following i.i.d. data arise from this density: 3.91, 4.85, 2.28, 4.06, 3.70, 4.04, 5.46, 3.53, 2.28, 1.96, 2.53, 3.88, 2.22, 3.47, 4.82, 2.46, 2.99, 2.54, 0.52, 2.50.  We wish to estimate $\theta$.
+```{r}
+##9. Graph the log-likelihood function between $-\pi$ and $\pi$.
+# Empirical data
+x<-c(3.91, 4.85, 2.28, 4.06, 3.70, 4.04, 5.46, 3.53, 2.28, 1.96, 2.53, 3.88, 2.22, 3.47, 4.82, 2.46, 2.99, 2.54, 0.52, 2.50)
+
+# Negative log-likelihood function
+compute_loglik <- function(theta=0.5)
+{
+  -sum (log ( (1 - cos(x - theta))/2*pi ))
+}
+
+thetas<-seq(-pi,pi,length.out=100)
+
+# log-likelihood function between -Pi and Pi, using 100 points
+qplot(thetas,sapply(thetas,FUN=compute_loglik))+
+    geom_point(size=2) +
+    xlab("theta") +
+    ylab("log-likelihood")
+
+# log-likelihood function between -3Pi and 3Pi, using 300 points
+# Note that function is periodic!
+thetas3<-seq(-3*pi,3*pi,length.out=3*100)
+qplot(thetas3,sapply(thetas3,FUN=compute_loglik))+
+  geom_point(size=2) +
+  xlab("theta") +
+  ylab("log-likelihood")
+
+##10. Find the method of moments estimator of $\theta$.
+# Function to perform Newton's method
+newton.method <- function(f, a, b, tol = 1e-5, n = 1000) {
+  require(numDeriv) # Package for computing f'(x)
+  
+  x0 <- a # Set start value to supplied lower bound
+  k <- n # Initialize for iteration results
+  
+  # Check the upper and lower bounds to see if approximations result in 0
+  fa <- f(a)
+  if (fa == 0.0) {
+    return(a)
+  }
+  
+  fb <- f(b)
+  if (fb == 0.0) {
+    return(b)
+  }
+  
+  for (i in 1:n) {
+    dx <- genD(func = f, x = x0)$D[1] # First-order derivative f'(x0)
+    x1 <- x0 - (f(x0) / dx) # Calculate next value x1
+    k[i] <- x1 # Store x1
+    # Once the difference between x0 and x1 becomes sufficiently small, output the results.
+    if (abs(x1 - x0) < tol) {
+      root.approx <- tail(k, n=1)
+      res <- list('root approximation' = root.approx, 'iterations' = k)
+      return(res)
+    }
+    # If Newton-Raphson has not yet reached convergence set x1 as x0 and continue
+    x0 <- x1
+  }
+  print('Too many iterations in method')
+}
+##11. Find the MLE for $\theta$ using Newton's method, using the result from 10 as a starting value.  What solutions do you find when you start at -2.7 and 2.7?
+
+# Using -2.7 as starting point
+sol1 <- newton.method(compute_loglik, -2.7,-3.7)
+# Using 2.7 as starting point
+sol2 <- newton.method(compute_loglik, 2.7,3.7)
+
+# Solutions
+print(sol1$`root approximation`)
+print(sol2$`root approximation`)
+
+##12. Repeat problem 11 using 200 equally spaced starting values between $-\pi$ and $\pi$.  The partition the interval into sets of attraction.  That is, divide the starting values into separate groups corresponding to the different local modes.  Discuss your results.
+
+# Define a function that depends only on the starting point, and performs newton.method defined before
+newton.method.onlyStarting <- function(starting)
+{result <- newton.method(f=compute_loglik,a=starting,b=starting+1)
+  return(result$`root approximation`) }
+
+# 200 equally spaced starting values between −π and π
+starting <- seq(-pi,pi,length.out=200)
+# Results
+results_newton <- sapply(starting,FUN=newton.method.onlyStarting) %>% as_tibble() %>% 
+                  mutate(value = round(value,3))
+
+# Check most common solutions
+results_newton %>% 
+  group_by(value) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count))
+# We can see that 1.67 is the most common solution, followed by -1.29
+
+##13. Find two starting values as close together as you can that converge to different solution using Newton's method.
+
+# We can look for close points that have different solutions
+qplot(starting,results_newton$value)+geom_point(size=3)+
+  xlab("Starting Points")+
+  ylab("Solution")+
+  xlim(0.5,1)
+# As an example, the points right before and right after 0.80 are very close and have different solutions
+# Check solutions for these points
+print(newton.method.onlyStarting(0.77355799))
+print(newton.method.onlyStarting(0.80513179))
+```

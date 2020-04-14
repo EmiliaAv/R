@@ -1,0 +1,168 @@
+---
+title: "EmiliaAvanes_Lab8"
+author: "Emilia Avanes"
+date: "11/25/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+1.
+```{r}
+library(tidyverse)
+library(modelr)
+library(broom)
+
+
+url <- 'http://www.faculty.ucr.edu/~jflegal/electemp.txt'
+electemp <- read.table(url) %>% as_tibble()
+
+
+
+
+ggplot(electemp,aes(temp,usage)) +
+  geom_point(size=2) + 
+  geom_smooth(method='lm', formula= y~ poly(x, degree=1),aes(colour="Linear"))+
+ geom_smooth(method='lm', formula= y~ poly(x, degree=2),aes(colour="Quadratic"))
+
+## 2. Quadratic
+
+
+## 3.
+
+
+## Step 1: Auxiliary function to perform crossvalidation given k, degree, target vector y and feature vector x
+
+mycrossval <- function(k=10,degree=2,y,x){
+
+mytibble<-tibble(x=x,y=y)
+set.seed(45763)
+
+folds <- crossv_kfold(mytibble, k = k)
+
+ folds <- folds %>% 
+          mutate(model = map(train, ~ lm(y ~ poly(x,degree=degree), data = .))) %>% 
+           mutate(predicted = map2(model, test, ~ augment(.x, newdata = .y))) 
+ 
+predicted <- folds %>% 
+            unnest(predicted) %>% 
+             mutate(sqerror = (.fitted - y)**2)
+
+summarized <- predicted %>% 
+  group_by(.id) %>% 
+  summarise(mse = mean(sqerror)) %>% 
+  select(mse)
+
+return(summarized)
+}
+
+## Step 2: Create cv_poly function where inside we define an auxiliary function where we use previous "mycrossval" function with fixed k, fixed y, fixed x and variable d, in order to use lapply function latter
+
+cv_poly<-function(k=10,d=8,y,x){
+  
+  mycrossval_fixedK <- function(degree){
+    mycrossval(k=k,degree,y,x)
+  }
+
+  degrees<-seq(1,d,1)
+  
+  outputList <- lapply(X=degrees,FUN=mycrossval_fixedK) 
+  results <- do.call(cbind, outputList)
+  names(results)<-degrees
+  names(results) <- paste0("d = ", names(results))
+  
+  return(results)
+}
+
+##4.
+
+cv_error<-cv_poly(k=10,d=8,y=electemp$usage,x=electemp$temp)
+
+print(cv_error)
+
+##5.I would choose degree=2 since it has the lowest MSPE.
+mspes <- tibble(colMeans(cv_error) %>% names(),colMeans(cv_error))
+names(mspes)<-c("degree","MSPE")
+
+ggplot(mspes,aes(degree,MSPE)) +
+  geom_point(size=3) 
+ 
+
+##6
+system.time({
+cv_error_k5 <-cv_poly(k=5,d=8,y=electemp$usage,x=electemp$temp)
+print(cv_error_k5)})
+
+system.time({
+cv_error_kn <-cv_poly(k=nrow(electemp),d=8,y=electemp$usage,x=electemp$temp)
+print(cv_error_kn)})
+
+## What do you notice about the time it takes to compute the cross-validation?
+## It takes longer as we increase k, as can be seen when we compare user (or elapsed) times in both cases.
+
+## How do the results change with K?
+## Let's compare MSPE's for the different degrees in both cases:
+colMeans(cv_error_k5)
+colMeans(cv_error_kn)
+## We can see that MSPE's tend to be lower for each degree as we increase k. However, the conclusion is the same: the lowest occurs when degree = 2.
+
+##7
+
+## Let's define an auxiliary function to plot MSPE and compare each case.
+plot_mspe<-function(cv_error_df){
+mspes <- tibble(colMeans(cv_error_df) %>% names(),colMeans(cv_error_df))
+names(mspes)<-c("degree","MSPE")
+
+ggplot(mspes,aes(degree,MSPE)) +
+  geom_point(size=3) 
+}
+
+## Lets visalize each case in ascending order of k.
+## K=5
+plot_mspe(cv_error_k5)
+## K=10
+plot_mspe(cv_error)
+## K=n (leave-one-out)
+plot_mspe(cv_error_kn)
+
+## What degree polynomial would you select according to cross-validation?
+## degree = 2 in all cases 
+## Are there differences between K = 5, K = 10, and leave-one-out estimates of MSPE?
+## Yes, MSPE's tend to be lower as we increase k.
+
+##8
+
+
+## We selected degree=2, but if we were to select another degree to answer this questions, it would be degree=3.
+ggplot(electemp,aes(temp,usage)) +
+  geom_point(size=2) + 
+  geom_smooth(method='lm', formula= y~ poly(x, degree=1),aes(colour="Linear"))+
+  geom_smooth(method='lm', formula= y~ poly(x, degree=2),aes(colour="Quadratic"))+
+  geom_smooth(method='lm', formula= y~ poly(x, degree=3),aes(colour="Third degree"))
+# We can notice that curves of degree=2 and degree=3 are very similar, they look overlapped.
+
+```

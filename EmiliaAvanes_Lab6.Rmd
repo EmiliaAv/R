@@ -1,0 +1,57 @@
+---
+title: "STAT206_Lab6"
+author: "Emilia Avanes"
+date: "12/5/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# 1. Write a function to simulate n N(0, 1) random variates using the Accept-Reject algorithm with a Cauchy candidate.
+
+fxn.cauchy <- function(n=100){
+  x <- double(n)
+  i <- 1
+  r <- 0
+  while(i < (n+1)) 
+  {
+    a <- rcauchy(1)
+    b <- a^3 * log(1+abs(a))
+    a <- rcauchy(1)
+    c <- 8*log(3)
+    test <- c*b
+    if(a < test){
+        x[i] <- b
+        i <- i+1
+    } else {r <- r+1}
+  }
+  fxn <- r/(r+n)
+  mcse <- sd(x)/sqrt(n)
+
+  result <- list(x, fxn, mcse)
+  names(result) <- c("x", "Acceptance Rate", "Error")
+  
+return(result)
+}
+```
+
+# 2. Simulate 1000 N(0, 1) random variates using your function to estimate E[Y3log(1 + |Y |)] and P r(Y ∈[−1, 2]). Be sure to include a Monte Carlo standard error with your estimates.
+
+fxn.cauchy(1000)
+
+#3. What was the acceptance rate of the Accept-Reject algorithm? Is this close to the theoretical acceptance rate?
+
+# Theoretical acceptance rate is much lower than the actual acceptance rate:
+
+m <- 8*log(3)
+fxn.t <- 1/m
+fxn.t
+
+```
+
+
+#4. Write a function that continues simulation until the sample size is large enough so that your Monte Carlo error is less than  = 0.01 for estimating a general statistic stat (which will be a function). You function should also return the observed acceptance rate of the Accept-Reject algorithm and a Monte Carlo standard error.
+
+#5. Use your function to estimate E[Y3log(1 + |Y |)] and P r(Y ∈ [−1, 2]) with  = 0.01. Report your estimates along with confidence intervals based on the Monte Carlo standard error. What was the acceptance rate?
+```
